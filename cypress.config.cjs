@@ -1,0 +1,507 @@
+const { defineConfig } = require('cypress');
+const fs = require('fs');
+const path = require('path');
+
+// Load environment variables from .env.local if present (without adding deps)
+try {
+  const envPath = path.resolve(__dirname, '.env.local');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (match) {
+        const key = match[1];
+        let val = match[2];
+        // Strip surrounding quotes
+        if (
+          (val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))
+        ) {
+          val = val.slice(1, -1);
+        }
+        if (!(key in process.env)) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+} catch (e) {
+  // ignore env load errors
+}
+
+module.exports = defineConfig({
+  e2e: {
+    baseUrl: 'http://localhost:8080',
+    viewportWidth: 1280,
+    viewportHeight: 720,
+    video: false,
+    screenshotOnRunFailure: true,
+    // Phase 3: Optimized timeouts for parallel execution and AI testing
+    defaultCommandTimeout: 10000, // Increased for AI operations
+    requestTimeout: 30000, // Increased for AI API calls
+    responseTimeout: 30000, // Increased for AI responses
+    pageLoadTimeout: 20000,
+    taskTimeout: 120000, // Added for long-running AI generation tasks
+
+    // Phase 3: Parallel execution configuration
+    numTestsKeptInMemory: 0,
+    experimentalMemoryManagement: true,
+
+    // Environment variables
+    env: {
+      // Test data
+      testUser: {
+        email: 'test-cypress@example.com',
+        password: 'TestPassword123!',
+        fullName: 'Cypress Test User',
+      },
+      // AI Testing configuration
+      aiTesting: {
+        enabled: true,
+        maxGenerationTime: 120000, // 2 minutes max for AI generation
+        providers: ['openai', 'anthropic', 'google'],
+        defaultProvider: 'openai',
+        defaultModel: 'gpt-4o-mini',
+        retryAttempts: 3,
+        timeoutBetweenRetries: 5000,
+      },
+      testOrganization: {
+        name: 'Cypress Test Organization',
+        orgType: 'nonprofit',
+        contactName: 'Cypress Test Contact',
+        contactEmail: 'cypress-contact@testorg.com',
+        contactPhone: '+4712345678',
+        membersCount: 5,
+        mission: 'Cypress test mission statement',
+        eventTypes: ['community', 'education', 'recreational'],
+        fundingNeeds: ['operational', 'program', 'community_programs'],
+        preferredLanguages: ['Norwegian', 'English'],
+      },
+      // Production Supabase endpoints
+      supabaseUrl: 'https://fjlrplhtgknuulqymsse.supabase.co',
+      supabaseAnonKey:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqbHJwbGh0Z2tudXVscXltc3NlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ2NTI2MjMsImV4cCI6MjA3MDIyODYyM30.N_IJwGZHksrFOYEo4cGd0-9I4fmZIXn8pDrMUKZuJZE',
+      supabaseServiceRoleKey: process.env.CYPRESS_SUPABASE_SERVICE_ROLE_KEY,
+    },
+
+    // Setup and teardown - Phase 1 optimized
+    setupNodeEvents(on, config) {
+      const { createClient } = require('@supabase/supabase-js');
+      const { createDatabaseTasks } = require('./cypress/tasks/database.cjs');
+      const { createAuthTasks } = require('./cypress/tasks/auth.cjs');
+      const {
+        createValidationTasks,
+      } = require('./cypress/tasks/validation.cjs');
+      const {
+        createEnhancedDatabaseTasks,
+      } = require('./cypress/tasks/enhanced-database.cjs');
+
+      // Initialize Supabase client with service role for admin operations
+      const serviceRoleKey =
+        config.env.supabaseServiceRoleKey ||
+        process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        process.env.CYPRESS_SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!serviceRoleKey) {
+        console.warn(
+          '⚠️  Supabase Service Role key not provided. Database tasks will be disabled.'
+        );
+      }
+
+      const supabase = serviceRoleKey
+        ? createClient(config.env.supabaseUrl, serviceRoleKey, {
+            auth: {
+              autoRefreshToken: false,
+              persistSession: false,
+            },
+          })
+        : null;
+
+      // Initialize task modules
+      const { seed, seedUsersOnly, cleanup } = createDatabaseTasks(
+        supabase,
+        config
+      );
+      const { cleanAuthUsers, refreshAuth } = createAuthTasks(supabase, config);
+      const { validateOrganization, testRLS, checkUserState } =
+        createValidationTasks(supabase, config);
+      const {
+        createTestUser,
+        grantSuperAdminRole,
+        createTestApplication,
+        validateApplications,
+        sweepTestData,
+        createPerformanceTestData,
+        // AI tasks
+        cleanupAITestData,
+        createAITestApplication,
+        createAIProviderConfig,
+        validateAIGeneration,
+        createMultipleAITestApplications,
+        monitorAIPerformance,
+      } = createEnhancedDatabaseTasks(supabase, config);
+
+      on('task', {
+        // Database tasks
+        'db:seed': seed,
+        'db:seedUsersOnly': seedUsersOnly,
+        'db:cleanup': cleanup,
+        'db:cleanAuthUsers': cleanAuthUsers,
+        'db:refreshAuth': refreshAuth,
+        'db:validateOrganization': validateOrganization,
+        'db:testRLS': testRLS,
+        'db:checkUserState': checkUserState,
+
+        // Enhanced database tasks
+        'db:createTestUser': createTestUser,
+        'db:grantSuperAdminRole': grantSuperAdminRole,
+        'db:makeSuperadmin': grantSuperAdminRole, // Alias for convenience
+        'db:createTestApplication': createTestApplication,
+        'db:validateApplications': validateApplications,
+        'db:sweepTestData': sweepTestData,
+        'db:createPerformanceTestData': createPerformanceTestData,
+
+        // AI database tasks (namespaced and direct for convenience)
+        'ai:createAITestApplication': createAITestApplication,
+        'ai:createAIProviderConfig': createAIProviderConfig,
+        'ai:validateAIGeneration': validateAIGeneration,
+        'ai:createMultipleAITestApplications': createMultipleAITestApplications,
+        'ai:monitorAIPerformance': monitorAIPerformance,
+        cleanupAITestData: cleanupAITestData,
+
+        // Reset database to clean state before tests
+        'db:reset': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('Resetting database to clean state...');
+
+            // First cleanup any existing test data
+            await cleanup();
+
+            // Wait a moment for cleanup to complete
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            // Then seed fresh test data
+            await seed();
+
+            // Wait for seeding to complete
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            return { success: true, message: 'Database reset successfully' };
+          } catch (error) {
+            console.error('Reset error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        'db:resetForOnboarding': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('Resetting database to clean state for onboarding...');
+
+            // First cleanup any existing test data
+            await cleanup();
+
+            // Wait a moment for cleanup to complete
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            // Then seed only users (no organizations)
+            await seedUsersOnly();
+
+            // Wait for seeding to complete
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            return {
+              success: true,
+              message: 'Database reset for onboarding successfully',
+            };
+          } catch (error) {
+            console.error('Reset for onboarding error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Enhanced seeding with better error handling
+        'db:seedEnhanced': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('🌱 Starting enhanced database seeding...');
+
+            // Test connection first
+            console.log('🔍 Testing Supabase connection...');
+            const { data: connectionTest, error: connectionError } =
+              await supabase.auth.admin.listUsers();
+            if (connectionError) {
+              console.error('❌ Supabase connection failed:', connectionError);
+              return {
+                success: false,
+                error: `Connection failed: ${connectionError.message}`,
+              };
+            }
+            console.log('✅ Supabase connection successful');
+
+            // Create test users with retry logic
+            const testUsers = [
+              {
+                email: 'test-cypress@example.com',
+                password: 'TestPassword123!',
+                userData: { full_name: 'Cypress Test User' },
+              },
+              {
+                email: 'test-new-options@example.com',
+                password: 'TestPassword123!',
+                userData: { full_name: 'Test User New Options' },
+              },
+              {
+                email: 'test-fresh-user@example.com',
+                password: 'TestPassword123!',
+                userData: { full_name: 'Fresh Test User' },
+              },
+            ];
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const user of testUsers) {
+              try {
+                console.log(`👤 Creating user: ${user.email}`);
+
+                // Check if user already exists
+                const { data: existingUsers } =
+                  await supabase.auth.admin.listUsers();
+                const existingUser = existingUsers.users.find(
+                  (u) => u.email === user.email
+                );
+
+                if (existingUser) {
+                  console.log(`✅ User already exists: ${user.email}`);
+                  successCount++;
+                  continue;
+                }
+
+                // Create new user with retry logic
+                let retries = 3;
+                let userCreated = false;
+
+                while (retries > 0 && !userCreated) {
+                  const { data, error } = await supabase.auth.admin.createUser({
+                    email: user.email,
+                    password: user.password,
+                    user_metadata: user.userData,
+                    email_confirm: true,
+                  });
+
+                  if (error) {
+                    if (error.message.includes('already been registered')) {
+                      console.log(`✅ User already exists: ${user.email}`);
+                      userCreated = true;
+                      successCount++;
+                    } else {
+                      console.error(
+                        `❌ Error creating user ${user.email} (attempt ${
+                          4 - retries
+                        }):`,
+                        error
+                      );
+                      retries--;
+                      if (retries > 0) {
+                        await new Promise((resolve) =>
+                          setTimeout(resolve, 1000)
+                        );
+                      }
+                    }
+                  } else {
+                    console.log(
+                      `✅ User created successfully: ${user.email} (ID: ${data.user?.id})`
+                    );
+                    userCreated = true;
+                    successCount++;
+                  }
+                }
+
+                if (!userCreated) {
+                  errorCount++;
+                }
+              } catch (err) {
+                console.error(`❌ Exception creating user ${user.email}:`, err);
+                errorCount++;
+              }
+            }
+
+            console.log(
+              `📊 Enhanced seeding complete: ${successCount} successful, ${errorCount} errors`
+            );
+
+            return {
+              success: successCount > 0,
+              message: `Enhanced seeding completed: ${successCount} users ready`,
+              successCount,
+              errorCount,
+            };
+          } catch (error) {
+            console.error('❌ Enhanced seed error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Comprehensive test data sweep
+        'db:sweepAllTestData': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('🧹 Starting comprehensive test data sweep...');
+
+            // Get all test users
+            const testEmails = [
+              'test-cypress@example.com',
+              'test-new-options@example.com',
+              'test-production-db@example.com',
+              'test-fresh-user@example.com',
+            ];
+
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const testUsers = users.users.filter((user) =>
+              testEmails.includes(user.email || '')
+            );
+            const userIds = testUsers.map((user) => user.id);
+
+            console.log(`🔍 Found ${testUsers.length} test users to sweep`);
+
+            if (userIds.length > 0) {
+              // Delete all related data in proper order
+              console.log('🗑️ Deleting debug logs...');
+              const { error: logsError } = await supabase
+                .from('debug_logs')
+                .delete()
+                .in('user_id', userIds);
+              if (logsError)
+                console.error('❌ Error deleting debug logs:', logsError);
+              else console.log('✅ Debug logs deleted');
+
+              console.log('🗑️ Deleting user roles...');
+              const { error: rolesError } = await supabase
+                .from('user_roles')
+                .delete()
+                .in('user_id', userIds);
+              if (rolesError)
+                console.error('❌ Error deleting user roles:', rolesError);
+              else console.log('✅ User roles deleted');
+
+              console.log('🗑️ Deleting organizations...');
+              const { error: orgsError } = await supabase
+                .from('organizations')
+                .delete()
+                .in('created_by', userIds);
+              if (orgsError)
+                console.error('❌ Error deleting organizations:', orgsError);
+              else console.log('✅ Organizations deleted');
+
+              console.log('🗑️ Deleting grant applications...');
+              const { error: appsError } = await supabase
+                .from('grant_applications')
+                .delete()
+                .in('user_id', userIds);
+              if (appsError)
+                console.error(
+                  '❌ Error deleting grant applications:',
+                  appsError
+                );
+              else console.log('✅ Grant applications deleted');
+
+              console.log('🗑️ Deleting system prompts...');
+              const { error: promptsError } = await supabase
+                .from('system_prompts')
+                .delete()
+                .in('user_id', userIds);
+              if (promptsError)
+                console.error(
+                  '❌ Error deleting system prompts:',
+                  promptsError
+                );
+              else console.log('✅ System prompts deleted');
+
+              // Delete the actual users
+              console.log('🗑️ Deleting test users...');
+              for (const userId of userIds) {
+                try {
+                  const { error } = await supabase.auth.admin.deleteUser(
+                    userId
+                  );
+                  if (error) {
+                    console.error(`❌ Error deleting user ${userId}:`, error);
+                  } else {
+                    console.log(`✅ User ${userId} deleted`);
+                  }
+                } catch (err) {
+                  console.error(`❌ Exception deleting user ${userId}:`, err);
+                }
+              }
+            } else {
+              console.log('ℹ️ No test users found to sweep');
+            }
+
+            console.log('🎉 Comprehensive test data sweep completed');
+            return {
+              success: true,
+              message: 'All test data swept successfully',
+              usersDeleted: userIds.length,
+            };
+          } catch (error) {
+            console.error('❌ Test data sweep error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+      });
+    },
+
+    // Test retries - disabled for faster feedback
+    retries: {
+      runMode: 0,
+      openMode: 0,
+    },
+
+    // Experimental features
+    experimentalModifyObstructiveThirdPartyCode: true,
+  },
+
+  component: {
+    devServer: {
+      framework: 'react',
+      bundler: 'vite',
+    },
+    specPattern: 'src/**/*.cy.{js,jsx,ts,tsx}',
+    supportFile: 'cypress/support/component.ts',
+  },
+
+  // Global configuration
+  watchForFileChanges: false,
+  chromeWebSecurity: false,
+  experimentalWebKitSupport: true,
+});

@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /applications
+Disallow: /grants
+Disallow: /settings
+Disallow: /organizations
+Disallow: /onboarding
+Disallow: /superadmin
+Disallow: /apply/
+Disallow: /auth/
+
+Sitemap: https://grantfather.no/sitemap.xml

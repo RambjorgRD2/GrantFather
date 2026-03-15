@@ -1,0 +1,22 @@
+# Bun configuration with conservative settings to avoid timeouts
+[install]
+# Shorter timeout to fail fast and fallback to npm
+timeout = "60000"
+# Use npm registry explicitly
+registry = "https://registry.npmjs.org/"
+# Disable verbose to reduce overhead
+verbose = false
+# Reduce concurrent downloads to avoid overwhelming
+concurrent = 2
+# Disable cache to avoid corruption issues
+cache = false
+# Retry on failure
+retry = 3
+
+[run]
+# Environment settings
+shell = "sh"
+
+[test]
+# Test runner settings
+preload = ["./src/test/setup.ts"]

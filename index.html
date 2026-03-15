@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GrantFather – Global AI grant writing platform</title>
+    <meta name="description" content="GrantFather helps organizations worldwide discover grants, draft winning applications with AI, and track submissions in one place. Specialized expertise in Norwegian and Nordic funding opportunities." />
+    <meta name="author" content="GrantFather" />
+    <meta name="keywords" content="grant writing, AI grants, Norwegian organizations, volunteer groups, funding applications, grant tracker" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="/" />
+
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <meta property="og:title" content="GrantFather – Global AI grant writing platform" />
+    <meta property="og:description" content="GrantFather helps organizations worldwide discover grants, draft winning applications with AI, and track submissions in one place. Specialized expertise in Norwegian and Nordic funding opportunities." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@lovable_dev" />
+    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <!-- GitHub Pages SPA: restore path encoded by 404.html -->
+    <script>
+      (function() {
+        var redirect = sessionStorage.redirect;
+        delete sessionStorage.redirect;
+        if (redirect && redirect !== location.href) {
+          history.replaceState(null, null, redirect);
+        }
+        // Handle ?p= query param set by 404.html
+        var search = location.search;
+        if (search.slice(1,3) === 'p=') {
+          var decoded = '/' + search.slice(3).replace(/~and~/g, '&');
+          var rest = decoded.slice(1).split('&');
+          var path = rest[0] ? '/' + rest[0] : '';
+          var query = rest[1] ? '?' + rest[1] : '';
+          var hash = location.hash;
+          history.replaceState(null, null, path + query + hash);
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

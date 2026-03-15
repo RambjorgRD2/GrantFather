@@ -1,0 +1,21 @@
+project_id = "fjlrplhtgknuulqymsse"
+
+[functions.ai-grant-writer]
+verify_jwt = true
+
+[functions.grants-search]
+verify_jwt = true
+
+[functions.foundation-scraper]
+verify_jwt = false
+
+[functions.clear-cache]
+verify_jwt = true
+
+[functions.generate-grant-draft]
+verify_jwt = true
+
+[functions.generate-suggestions]
+verify_jwt = true
+[functions.hero-image-upload-v2]
+verify_jwt = true

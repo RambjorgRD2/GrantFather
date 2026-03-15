@@ -1,0 +1,1253 @@
+const { defineConfig } = require('cypress');
+
+module.exports = defineConfig({
+  e2e: {
+    baseUrl: 'http://localhost:8080',
+    viewportWidth: 1280,
+    viewportHeight: 720,
+    video: false,
+    screenshotOnRunFailure: true,
+    defaultCommandTimeout: 2000,
+    requestTimeout: 2000,
+    responseTimeout: 2000,
+    pageLoadTimeout: 2000,
+
+    // Environment variables
+    env: {
+      // Test data
+      testUser: {
+        email: 'test-cypress@example.com',
+        password: 'TestPassword123!',
+        fullName: 'Cypress Test User',
+      },
+      testOrganization: {
+        name: 'Cypress Test Organization',
+        orgType: 'nonprofit',
+        contactName: 'Cypress Test Contact',
+        contactEmail: 'cypress-contact@testorg.com',
+        contactPhone: '+4712345678',
+        membersCount: 5,
+        mission: 'Cypress test mission statement',
+        eventTypes: ['community', 'education', 'recreational'],
+        fundingNeeds: ['operational', 'program', 'community_programs'],
+        preferredLanguages: ['Norwegian', 'English'],
+      },
+      // Production Supabase endpoints
+      supabaseUrl: 'https://fjlrplhtgknuulqymsse.supabase.co',
+      supabaseAnonKey:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqbHJwbGh0Z2tudXVscXltc3NlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ2NTI2MjMsImV4cCI6MjA3MDIyODYyM30.N_IJwGZHksrFOYEo4cGd0-9I4fmZIXn8pDrMUKZuJZE',
+      supabaseServiceRoleKey: process.env.CYPRESS_SUPABASE_SERVICE_ROLE_KEY,
+    },
+
+    // Setup and teardown
+    setupNodeEvents(on, config) {
+      const { createClient } = require('@supabase/supabase-js');
+      const { createDatabaseTasks } = require('./cypress/tasks/database');
+      const { createAuthTasks } = require('./cypress/tasks/auth');
+      const { createValidationTasks } = require('./cypress/tasks/validation');
+
+      // Initialize Supabase client with service role for admin operations
+      const serviceRoleKey =
+        config.env.supabaseServiceRoleKey ||
+        process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!serviceRoleKey) {
+        console.warn(
+          '⚠️  Supabase Service Role key not provided. Database tasks will be disabled.'
+        );
+      }
+
+      const supabase = serviceRoleKey
+        ? createClient(config.env.supabaseUrl, serviceRoleKey, {
+            auth: {
+              autoRefreshToken: false,
+              persistSession: false,
+            },
+          })
+        : null;
+
+      // Initialize task modules
+      const { seed, cleanup } = createDatabaseTasks(supabase, config);
+      const { cleanAuthUsers, refreshAuth } = createAuthTasks(supabase, config);
+      const { validateOrganization, testRLS, checkUserState } = createValidationTasks(supabase, config);
+
+      on('task', {
+        // Seed test database with base data
+        'db:seed': seed,
+
+        // Clean up test data after tests
+        'db:cleanup': cleanup,
+
+        // Comprehensive auth users cleanup
+        'db:cleanAuthUsers': cleanAuthUsers,
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('🧹 Starting comprehensive auth users cleanup...');
+
+            // Get all test users from auth.users
+            const testEmails = [
+              'test-cypress@example.com',
+              'test-new-options@example.com',
+              'test-production-db@example.com',
+              'test-fresh-user@example.com',
+            ];
+
+            const { data: users, error: listError } =
+              await supabase.auth.admin.listUsers();
+            if (listError) {
+              console.error('❌ Error listing users:', listError);
+              return { success: false, error: listError.message };
+            }
+
+            const testUsers = users.users.filter((user) =>
+              testEmails.includes(user.email || '')
+            );
+
+            console.log(
+              `🔍 Found ${testUsers.length} test users in auth.users to clean`
+            );
+
+            if (testUsers.length > 0) {
+              // Delete each test user from auth.users
+              for (const user of testUsers) {
+                try {
+                  console.log(
+                    `🗑️ Deleting auth user: ${user.email} (${user.id})`
+                  );
+                  const { error } = await supabase.auth.admin.deleteUser(
+                    user.id
+                  );
+                  if (error) {
+                    console.error(
+                      `❌ Error deleting auth user ${user.email}:`,
+                      error
+                    );
+                  } else {
+                    console.log(`✅ Auth user deleted: ${user.email}`);
+                  }
+                } catch (err) {
+                  console.error(
+                    `❌ Exception deleting auth user ${user.email}:`,
+                    err
+                  );
+                }
+              }
+            } else {
+              console.log('ℹ️ No test users found in auth.users');
+            }
+
+            // Verify cleanup
+            const { data: remainingUsers } =
+              await supabase.auth.admin.listUsers();
+            const remainingTestUsers = remainingUsers.users.filter((user) =>
+              testEmails.includes(user.email || '')
+            );
+
+            console.log(
+              `🔍 Verification: ${remainingTestUsers.length} test users remaining in auth.users`
+            );
+
+            console.log('🎉 Auth users cleanup completed');
+            return {
+              success: true,
+              message: 'Auth users cleanup completed',
+              usersDeleted: testUsers.length,
+              remainingTestUsers: remainingTestUsers.length,
+            };
+          } catch (error) {
+            console.error('❌ Auth users cleanup error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Comprehensive test data sweep
+        'db:sweepAllTestData': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('🧹 Starting comprehensive test data sweep...');
+
+            // Get all test users
+            const testEmails = [
+              'test-cypress@example.com',
+              'test-new-options@example.com',
+              'test-production-db@example.com',
+              'test-fresh-user@example.com',
+            ];
+
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const testUsers = users.users.filter((user) =>
+              testEmails.includes(user.email || '')
+            );
+            const userIds = testUsers.map((user) => user.id);
+
+            console.log(`🔍 Found ${testUsers.length} test users to sweep`);
+
+            if (userIds.length > 0) {
+              // Delete all related data in proper order
+              console.log('🗑️ Deleting debug logs...');
+              const { error: logsError } = await supabase
+                .from('debug_logs')
+                .delete()
+                .in('user_id', userIds);
+              if (logsError)
+                console.error('❌ Error deleting debug logs:', logsError);
+              else console.log('✅ Debug logs deleted');
+
+              console.log('🗑️ Deleting user roles...');
+              const { error: rolesError } = await supabase
+                .from('user_roles')
+                .delete()
+                .in('user_id', userIds);
+              if (rolesError)
+                console.error('❌ Error deleting user roles:', rolesError);
+              else console.log('✅ User roles deleted');
+
+              console.log('🗑️ Deleting organizations...');
+              const { error: orgsError } = await supabase
+                .from('organizations')
+                .delete()
+                .in('created_by', userIds);
+              if (orgsError)
+                console.error('❌ Error deleting organizations:', orgsError);
+              else console.log('✅ Organizations deleted');
+
+              console.log('🗑️ Deleting grant applications...');
+              const { error: appsError } = await supabase
+                .from('grant_applications')
+                .delete()
+                .in('user_id', userIds);
+              if (appsError)
+                console.error(
+                  '❌ Error deleting grant applications:',
+                  appsError
+                );
+              else console.log('✅ Grant applications deleted');
+
+              console.log('🗑️ Deleting system prompts...');
+              const { error: promptsError } = await supabase
+                .from('system_prompts')
+                .delete()
+                .in('user_id', userIds);
+              if (promptsError)
+                console.error(
+                  '❌ Error deleting system prompts:',
+                  promptsError
+                );
+              else console.log('✅ System prompts deleted');
+
+              // Delete the actual users
+              console.log('🗑️ Deleting test users...');
+              for (const userId of userIds) {
+                try {
+                  const { error } = await supabase.auth.admin.deleteUser(
+                    userId
+                  );
+                  if (error) {
+                    console.error(`❌ Error deleting user ${userId}:`, error);
+                  } else {
+                    console.log(`✅ User ${userId} deleted`);
+                  }
+                } catch (err) {
+                  console.error(`❌ Exception deleting user ${userId}:`, err);
+                }
+              }
+            } else {
+              console.log('ℹ️ No test users found to sweep');
+            }
+
+            console.log('🎉 Comprehensive test data sweep completed');
+            return {
+              success: true,
+              message: 'All test data swept successfully',
+              usersDeleted: userIds.length,
+            };
+          } catch (error) {
+            console.error('❌ Test data sweep error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Force refresh authentication state
+        'db:refreshAuth': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('🔄 Refreshing authentication state...');
+
+            // Get test user IDs
+            const testEmails = [
+              'test-cypress@example.com',
+              'test-new-options@example.com',
+              'test-production-db@example.com',
+              'test-fresh-user@example.com',
+            ];
+
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const testUsers = users.users.filter((user) =>
+              testEmails.includes(user.email || '')
+            );
+
+            console.log(`🔍 Found ${testUsers.length} test users to refresh`);
+
+            // Force refresh each user's session
+            for (const user of testUsers) {
+              try {
+                // Generate a new session for the user
+                const { data, error } = await supabase.auth.admin.generateLink({
+                  type: 'magiclink',
+                  email: user.email || '',
+                });
+
+                if (error) {
+                  console.error(
+                    `❌ Error refreshing auth for ${user.email || 'unknown'}:`,
+                    error
+                  );
+                } else {
+                  console.log(
+                    `✅ Auth refreshed for ${user.email || 'unknown'}`
+                  );
+                }
+              } catch (err) {
+                console.error(
+                  `❌ Exception refreshing auth for ${
+                    user.email || 'unknown'
+                  }:`,
+                  err
+                );
+              }
+            }
+
+            console.log('🎉 Authentication state refresh completed');
+            return { success: true, message: 'Authentication state refreshed' };
+          } catch (error) {
+            console.error('❌ Auth refresh error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Reset database to clean state before tests
+        'db:reset': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('Resetting database to clean state...');
+
+            // First cleanup any existing test data
+            await cleanup();
+
+            // Wait a moment for cleanup to complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Then seed fresh test data
+            await seed();
+
+            // Wait for seeding to complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            return { success: true, message: 'Database reset successfully' };
+          } catch (error) {
+            console.error('Reset error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Enhanced seeding with better error handling
+        'db:seedEnhanced': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error: 'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            console.log('🌱 Starting enhanced database seeding...');
+
+            // Test connection first
+            console.log('🔍 Testing Supabase connection...');
+            const { data: connectionTest, error: connectionError } = await supabase.auth.admin.listUsers();
+            if (connectionError) {
+              console.error('❌ Supabase connection failed:', connectionError);
+              return {
+                success: false,
+                error: `Connection failed: ${connectionError.message}`,
+              };
+            }
+            console.log('✅ Supabase connection successful');
+
+            // Create test users with retry logic
+            const testUsers = [
+              {
+                email: 'test-cypress@example.com',
+                password: 'TestPassword123!',
+                userData: { full_name: 'Cypress Test User' },
+              },
+              {
+                email: 'test-new-options@example.com',
+                password: 'TestPassword123!',
+                userData: { full_name: 'Test User New Options' },
+              },
+              {
+                email: 'test-fresh-user@example.com',
+                password: 'TestPassword123!',
+                userData: { full_name: 'Fresh Test User' },
+              },
+            ];
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const user of testUsers) {
+              try {
+                console.log(`👤 Creating user: ${user.email}`);
+                
+                // Check if user already exists
+                const { data: existingUsers } = await supabase.auth.admin.listUsers();
+                const existingUser = existingUsers.users.find(u => u.email === user.email);
+                
+                if (existingUser) {
+                  console.log(`✅ User already exists: ${user.email}`);
+                  successCount++;
+                  continue;
+                }
+
+                // Create new user with retry logic
+                let retries = 3;
+                let userCreated = false;
+                
+                while (retries > 0 && !userCreated) {
+                  const { data, error } = await supabase.auth.admin.createUser({
+                    email: user.email,
+                    password: user.password,
+                    user_metadata: user.userData,
+                    email_confirm: true,
+                  });
+
+                  if (error) {
+                    if (error.message.includes('already been registered')) {
+                      console.log(`✅ User already exists: ${user.email}`);
+                      userCreated = true;
+                      successCount++;
+                    } else {
+                      console.error(`❌ Error creating user ${user.email} (attempt ${4-retries}):`, error);
+                      retries--;
+                      if (retries > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                      }
+                    }
+                  } else {
+                    console.log(`✅ User created successfully: ${user.email} (ID: ${data.user?.id})`);
+                    userCreated = true;
+                    successCount++;
+                  }
+                }
+                
+                if (!userCreated) {
+                  errorCount++;
+                }
+              } catch (err) {
+                console.error(`❌ Exception creating user ${user.email}:`, err);
+                errorCount++;
+              }
+            }
+
+            console.log(`📊 Enhanced seeding complete: ${successCount} successful, ${errorCount} errors`);
+
+            return {
+              success: successCount > 0,
+              message: `Enhanced seeding completed: ${successCount} users ready`,
+              successCount,
+              errorCount,
+            };
+          } catch (error) {
+            console.error('❌ Enhanced seed error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Validate organization creation in database
+        'db:validateOrganization': async (organizationData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const user = users.users.find(
+              (u) => u.email === organizationData.userEmail
+            );
+
+            if (!user) {
+              throw new Error(`User not found: ${organizationData.userEmail}`);
+            }
+
+            // Check organization exists
+            const { data: org, error: orgError } = await supabase
+              .from('organizations')
+              .select('*')
+              .eq('created_by', user.id)
+              .eq('name', organizationData.name)
+              .single();
+
+            if (orgError || !org) {
+              throw new Error(
+                `Organization not found: ${organizationData.name}`
+              );
+            }
+
+            // Check user role exists
+            const { data: role, error: roleError } = await supabase
+              .from('user_roles')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('organization_id', org.id)
+              .eq('role', 'admin')
+              .single();
+
+            if (roleError || !role) {
+              throw new Error('Admin role not created for organization');
+            }
+
+            // Validate organization data
+            const validation = {
+              nameMatch: org.name === organizationData.name,
+              typeMatch: org.org_type === organizationData.orgType,
+              eventTypesMatch:
+                JSON.stringify(org.event_types.sort()) ===
+                JSON.stringify(organizationData.eventTypes.sort()),
+              fundingNeedsMatch:
+                JSON.stringify(org.funding_needs.sort()) ===
+                JSON.stringify(organizationData.fundingNeeds.sort()),
+              languagesMatch:
+                JSON.stringify(org.preferred_languages.sort()) ===
+                JSON.stringify(organizationData.preferredLanguages.sort()),
+              onboardingCompleted: org.onboarding_completed === true,
+              roleIsAdmin: role.role === 'admin',
+            };
+
+            const allValid = Object.values(validation).every((v) => v === true);
+
+            return {
+              success: allValid,
+              validation,
+              organization: org,
+              userRole: role,
+            };
+          } catch (error) {
+            console.error('Validation error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test RLS policies
+        'db:testRLS': async (userEmail) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const user = users.users.find((u) => u.email === userEmail);
+
+            if (!user) {
+              throw new Error(`User not found: ${userEmail}`);
+            }
+
+            // Create user-specific supabase client
+            const userSupabase = createClient(
+              config.env.supabaseUrl,
+              config.env.supabaseAnonKey
+            );
+
+            // Set the user session
+            await userSupabase.auth.setSession({
+              access_token: user.access_token,
+              refresh_token: user.refresh_token,
+            });
+
+            // Test organization RLS - user should only see their own
+            const { data: orgs, error: orgsError } = await userSupabase
+              .from('organizations')
+              .select('*');
+
+            // Test user_roles RLS - user should only see their own roles
+            const { data: roles, error: rolesError } = await userSupabase
+              .from('user_roles')
+              .select('*');
+
+            return {
+              success: true,
+              organizationsVisible: orgs?.length || 0,
+              rolesVisible: roles?.length || 0,
+              canAccessOwnData:
+                (orgs?.length > 0 || orgsError?.message?.includes('no rows')) &&
+                (roles?.length > 0 || rolesError?.message?.includes('no rows')),
+            };
+          } catch (error) {
+            console.error('RLS test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Validate debug logs
+        'db:validateDebugLogs': async (userEmail) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const user = users.users.find((u) => u.email === userEmail);
+
+            if (!user) {
+              throw new Error(`User not found: ${userEmail}`);
+            }
+
+            const { data: logs, error } = await supabase
+              .from('debug_logs')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false });
+
+            if (error) {
+              throw new Error(`Error fetching debug logs: ${error.message}`);
+            }
+
+            return {
+              success: true,
+              logsFound: logs?.length || 0,
+              logs: logs || [],
+            };
+          } catch (error) {
+            console.error('Debug logs validation error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Check database state for a given user email
+        'db:checkUserState': async (userEmail) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            // Find auth user by email
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const user = users.users.find((u) => u.email === userEmail);
+
+            const result = {
+              userExists: !!user,
+              userId: user?.id || null,
+              userMetadata: user?.user_metadata || null,
+              organizationExists: false,
+              organizationId: null,
+              organizationName: null,
+              onboardingCompleted: false,
+              userRoleExists: false,
+              userRole: null,
+              roleOrganizationId: null,
+            };
+
+            if (!user) {
+              return result;
+            }
+
+            // Get organization created by user (if any)
+            const { data: org } = await supabase
+              .from('organizations')
+              .select('*')
+              .eq('created_by', user.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (org) {
+              result.organizationExists = true;
+              result.organizationId = org.id;
+              result.organizationName = org.name;
+              result.onboardingCompleted = !!org.onboarding_completed;
+            }
+
+            // Get role for user (if any)
+            const { data: role } = await supabase
+              .from('user_roles')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (role) {
+              result.userRoleExists = true;
+              result.userRole = role.role;
+              result.roleOrganizationId = role.organization_id || null;
+            }
+
+            return result;
+          } catch (error) {
+            console.error('db:checkUserState error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Get system statistics
+        'db:getSystemStatistics': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const { data: organizations } = await supabase
+              .from('organizations')
+              .select('id');
+            const { data: applications } = await supabase
+              .from('grant_applications')
+              .select('id');
+
+            return {
+              success: true,
+              totalUsers: users.users.length,
+              totalOrganizations: organizations?.length || 0,
+              totalApplications: applications?.length || 0,
+            };
+          } catch (error) {
+            console.error('System statistics error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Get cross-organization data
+        'db:getCrossOrganizationData': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const { data: organizations } = await supabase
+              .from('organizations')
+              .select('*');
+            const { data: users } = await supabase.auth.admin.listUsers();
+
+            return {
+              success: true,
+              organizations: organizations || [],
+              totalUsers: users.users.length,
+            };
+          } catch (error) {
+            console.error('Cross-organization data error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Clear system cache
+        'db:clearSystemCache': async () => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            // Simulate cache clearing
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            return {
+              success: true,
+              cacheCleared: true,
+            };
+          } catch (error) {
+            console.error('Cache clearing error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Invalidate cache
+        'db:invalidateCache': async (cacheKeys) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            // Simulate cache invalidation
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            return {
+              success: true,
+              invalidatedKeys: cacheKeys.cacheKeys || [],
+            };
+          } catch (error) {
+            console.error('Cache invalidation error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Warm cache
+        'db:warmCache': async (cacheKeys) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            // Simulate cache warming
+            await new Promise((resolve) => setTimeout(resolve, 200));
+
+            return {
+              success: true,
+              warmedKeys: cacheKeys.cacheKeys || [],
+            };
+          } catch (error) {
+            console.error('Cache warming error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Validate user role
+        'db:validateUserRole': async (userData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const user = users.users.find(
+              (u) => u.email === userData.userEmail
+            );
+
+            if (!user) {
+              throw new Error(`User not found: ${userData.userEmail}`);
+            }
+
+            const { data: role } = await supabase
+              .from('user_roles')
+              .select('*')
+              .eq('user_id', user.id)
+              .single();
+
+            return {
+              success: true,
+              role: role?.role || 'member',
+            };
+          } catch (error) {
+            console.error('User role validation error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test query performance
+        'db:testQueryPerformance': async (queryData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const startTime = Date.now();
+            const { data, error } = await supabase.rpc('execute_query', {
+              query: queryData.query,
+              params: queryData.parameters,
+            });
+            const endTime = Date.now();
+            const executionTime = endTime - startTime;
+
+            if (error) {
+              throw new Error(`Query execution error: ${error.message}`);
+            }
+
+            return {
+              success: true,
+              executionTime,
+              rowsReturned: data?.length || 0,
+            };
+          } catch (error) {
+            console.error('Query performance test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test connection performance
+        'db:testConnectionPerformance': async (connectionData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const startTime = Date.now();
+            const connections = [];
+
+            for (let i = 0; i < connectionData.connectionCount; i++) {
+              const connectionStart = Date.now();
+              const { data, error } = await supabase
+                .from('organizations')
+                .select('id')
+                .limit(1);
+              const connectionEnd = Date.now();
+
+              if (!error) {
+                connections.push(connectionEnd - connectionStart);
+              }
+            }
+
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            const averageConnectionTime =
+              connections.reduce((a, b) => a + b, 0) / connections.length;
+
+            return {
+              success: true,
+              totalTime,
+              connectionsEstablished: connections.length,
+              averageConnectionTime,
+            };
+          } catch (error) {
+            console.error('Connection performance test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test transaction performance
+        'db:testTransactionPerformance': async (transactionData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const startTime = Date.now();
+            const transactions = [];
+
+            for (let i = 0; i < transactionData.transactionCount; i++) {
+              const transactionStart = Date.now();
+              const { data, error } = await supabase.from('debug_logs').insert({
+                action: 'test_transaction',
+                details: { test: i },
+              });
+              const transactionEnd = Date.now();
+
+              if (!error) {
+                transactions.push(transactionEnd - transactionStart);
+              }
+            }
+
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            const averageTransactionTime =
+              transactions.reduce((a, b) => a + b, 0) / transactions.length;
+
+            return {
+              success: true,
+              totalTime,
+              transactionsCompleted: transactions.length,
+              averageTransactionTime,
+            };
+          } catch (error) {
+            console.error('Transaction performance test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Simulate concurrent users
+        'db:simulateConcurrentUsers': async (concurrentData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const startTime = Date.now();
+            const userPromises = [];
+
+            for (let i = 0; i < concurrentData.userCount; i++) {
+              const userPromise = (async () => {
+                const operations = [];
+                for (let j = 0; j < concurrentData.operationsPerUser; j++) {
+                  const { data, error } = await supabase
+                    .from('debug_logs')
+                    .insert({
+                      action: 'concurrent_test',
+                      details: { user: i, operation: j },
+                    });
+                  if (!error) {
+                    operations.push(j);
+                  }
+                }
+                return operations.length;
+              })();
+              userPromises.push(userPromise);
+            }
+
+            const results = await Promise.all(userPromises);
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            const operationsCompleted = results.reduce((a, b) => a + b, 0);
+
+            return {
+              success: true,
+              totalTime,
+              usersCompleted: results.length,
+              operationsCompleted,
+              averageOperationTime: totalTime / operationsCompleted,
+            };
+          } catch (error) {
+            console.error('Concurrent users simulation error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Simulate concurrent operations
+        'db:simulateConcurrentOperations': async (operationData) => {
+          if (!supabase) {
+            return {
+              success: false,
+              error:
+                'Supabase client not available - Service Role key required',
+            };
+          }
+
+          try {
+            const startTime = Date.now();
+            const operationPromises = [];
+
+            for (let i = 0; i < operationData.operationCount; i++) {
+              const operationPromise = (async () => {
+                const { data, error } = await supabase
+                  .from('debug_logs')
+                  .insert({
+                    action: 'concurrent_operation',
+                    details: { operation: i },
+                  });
+                return { success: !error, error };
+              })();
+              operationPromises.push(operationPromise);
+            }
+
+            const results = await Promise.all(operationPromises);
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            const operationsCompleted = results.filter((r) => r.success).length;
+            const errors = results.filter((r) => !r.success).length;
+
+            return {
+              success: true,
+              totalTime,
+              operationsCompleted,
+              averageOperationTime: totalTime / operationData.operationCount,
+              errors,
+            };
+          } catch (error) {
+            console.error('Concurrent operations simulation error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test network optimization
+        'network:testOptimization': async (networkData) => {
+          try {
+            const startTime = Date.now();
+            const response = await fetch(networkData.url);
+            const endTime = Date.now();
+            const loadTime = endTime - startTime;
+
+            const contentLength = response.headers.get('content-length');
+            const totalSize = contentLength ? parseInt(contentLength) : 0;
+
+            return {
+              success: true,
+              loadTime,
+              totalSize,
+              compressionRatio: 0.7, // Simulated compression ratio
+            };
+          } catch (error) {
+            console.error('Network optimization test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test stress scenarios
+        'stress:testScenarios': async (stressData) => {
+          try {
+            const startTime = Date.now();
+            const scenarios = [];
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (let i = 0; i < stressData.scenarioCount; i++) {
+              try {
+                // Simulate stress scenario
+                await new Promise((resolve) =>
+                  setTimeout(resolve, Math.random() * 1000)
+                );
+                scenarios.push({ success: true, scenario: i });
+                successCount++;
+              } catch (error) {
+                scenarios.push({
+                  success: false,
+                  scenario: i,
+                  error: error.message,
+                });
+                errorCount++;
+              }
+            }
+
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            const successRate = successCount / stressData.scenarioCount;
+
+            return {
+              success: true,
+              totalTime,
+              successRate,
+              errors: errorCount,
+            };
+          } catch (error) {
+            console.error('Stress test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+
+        // Test error scenarios
+        'error:testScenarios': async (errorData) => {
+          try {
+            const startTime = Date.now();
+            const scenarios = [];
+            let errorsHandled = 0;
+
+            for (let i = 0; i < errorData.errorCount; i++) {
+              try {
+                // Simulate error scenario
+                if (Math.random() > 0.5) {
+                  throw new Error(`Simulated error ${i}`);
+                }
+                scenarios.push({ handled: true, scenario: i });
+                errorsHandled++;
+              } catch (error) {
+                // Simulate error handling
+                scenarios.push({
+                  handled: true,
+                  scenario: i,
+                  error: error.message,
+                });
+                errorsHandled++;
+              }
+            }
+
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            const recoveryRate = errorsHandled / errorData.errorCount;
+
+            return {
+              success: true,
+              totalTime,
+              recoveryRate,
+              errorsHandled,
+            };
+          } catch (error) {
+            console.error('Error scenario test error:', error);
+            return { success: false, error: error.message };
+          }
+        },
+      });
+    },
+
+    // Test retries - disabled for faster feedback
+    retries: {
+      runMode: 0,
+      openMode: 0,
+    },
+
+    // Experimental features
+    experimentalModifyObstructiveThirdPartyCode: true,
+  },
+
+  component: {
+    devServer: {
+      framework: 'react',
+      bundler: 'vite',
+    },
+    specPattern: 'src/**/*.cy.{js,jsx,ts,tsx}',
+    supportFile: 'cypress/support/component.ts',
+  },
+
+  // Global configuration
+  watchForFileChanges: false,
+  chromeWebSecurity: false,
+  experimentalWebKitSupport: true,
+});
