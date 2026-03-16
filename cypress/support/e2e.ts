@@ -14,8 +14,6 @@
 // ***********************************************************
 
 import './commands';
-import './enhanced-commands';
-import './parallel-commands';
 import './ai-commands';
 import 'cypress-plugin-tab';
 
