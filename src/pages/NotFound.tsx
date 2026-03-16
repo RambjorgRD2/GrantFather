@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import { SEOHead } from '@/components/SEOHead';
 
@@ -25,12 +25,12 @@ const NotFound = () => {
           <p className="text-xl text-muted-foreground mb-4">
             Oops! Page not found
           </p>
-          <a
-            href="/"
+          <Link
+            to="/"
             className="text-primary hover:text-primary/80 underline underline-offset-4"
           >
             Return to Home
-          </a>
+          </Link>
         </div>
       </main>
     </>

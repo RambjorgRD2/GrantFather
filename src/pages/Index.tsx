@@ -82,12 +82,12 @@ const Index = () => {
             >
               Pricing
             </a>
-            <a
-              href="/help"
+            <Link
+              to="/help"
               className="text-muted-foreground hover:text-foreground"
             >
               Help
-            </a>
+            </Link>
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
