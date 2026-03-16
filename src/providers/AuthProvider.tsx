@@ -37,45 +37,60 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
-// PHASE 3: Add LRU cache management to prevent memory leaks
-const MAX_CACHE_SIZE = 100; // Maximum cached organizations
 const pendingFetches = new Set<string>();
 const orgCache = new Map<string, { org: any; role: any; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const failedFetches = new Map<string, number>(); // Circuit breaker
-const CIRCUIT_BREAKER_TIMEOUT = 10000; // 10 seconds - reduced for better UX
-const CACHE_VERSION = '1.0.0'; // Increment to invalidate all caches
+const CIRCUIT_BREAKER_TIMEOUT = 10000; // 10 seconds
+const CACHE_VERSION = '1.1.0'; // Increment to invalidate all caches
+const SESSION_CACHE_KEY = (uid: string) => `gf_org_${CACHE_VERSION}_${uid}`;
+
+// sessionStorage helpers — survives page refresh, cleared on tab close
+function readSessionCache(userId: string) {
+  try {
+    const raw = sessionStorage.getItem(SESSION_CACHE_KEY(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+      sessionStorage.removeItem(SESSION_CACHE_KEY(userId));
+      return null;
+    }
+    return parsed as { org: any; role: any; timestamp: number };
+  } catch { return null; }
+}
+
+function writeSessionCache(userId: string, value: { org: any; role: any; timestamp: number }) {
+  try {
+    sessionStorage.setItem(SESSION_CACHE_KEY(userId), JSON.stringify(value));
+  } catch { /* sessionStorage unavailable */ }
+}
+
+function clearSessionCache(userId?: string) {
+  try {
+    if (userId) {
+      sessionStorage.removeItem(SESSION_CACHE_KEY(userId));
+    } else {
+      Object.keys(sessionStorage)
+        .filter(k => k.startsWith('gf_org_'))
+        .forEach(k => sessionStorage.removeItem(k));
+    }
+  } catch { /* sessionStorage unavailable */ }
+}
 
 // Export cache clearing function for manual use
 export const clearAuthCache = () => {
   orgCache.clear();
   failedFetches.clear();
+  clearSessionCache();
   try {
-    // Clear localStorage auth-related data
-    const keys = ['org_cache_', 'failed_fetch_', 'last_org_fetch_failure'];
-    Object.keys(localStorage).forEach(key => {
-      if (keys.some(prefix => key.startsWith(prefix))) {
-        localStorage.removeItem(key);
-      }
-    });
     localStorage.setItem('cache_version', CACHE_VERSION);
     logger.debug('Auth cache cleared');
-  } catch (e) {
-    console.warn('Failed to clear localStorage cache:', e);
-  }
+  } catch { /* localStorage unavailable */ }
 };
 
-// LRU cache management: remove oldest entry when size limit reached
 function addToOrgCache(key: string, value: { org: any; role: any; timestamp: number }) {
-  if (orgCache.size >= MAX_CACHE_SIZE) {
-    // Remove the oldest entry (first key in Map maintains insertion order)
-    const oldestKey = orgCache.keys().next().value;
-    if (oldestKey) {
-      orgCache.delete(oldestKey);
-      logger.debug(`Cache evicted oldest entry: ${oldestKey}`);
-    }
-  }
   orgCache.set(key, value);
+  writeSessionCache(key, value);
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -170,9 +185,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Enhanced fetchOrganization with retry logic, timeout, deduplication, and caching
   const fetchOrganization = useCallback(
     async (userId: string) => {
-      // PHASE 4: Check cache first
-      const cachedData = orgCache.get(userId);
-      if (cachedData && Date.now() - cachedData.timestamp < CACHE_TTL) {
+      // Check in-memory cache first, then sessionStorage (survives page refresh)
+      const cachedData = orgCache.get(userId) ?? readSessionCache(userId);
+      if (cachedData) {
+        // Warm the in-memory cache in case it was a sessionStorage hit
+        orgCache.set(userId, cachedData);
         logger.debug('Using cached organization data');
         setUserRole(cachedData.role);
         setOrganization(cachedData.org);
@@ -469,8 +486,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signOut = async () => {
     try {
+      const userId = user?.id;
       await supabase.auth.signOut();
-      // Clear state
+      // Clear all caches for this user
+      if (userId) {
+        orgCache.delete(userId);
+        clearSessionCache(userId);
+        failedFetches.delete(userId);
+      }
       setUser(null);
       setSession(null);
       setOrganization(null);
@@ -486,6 +509,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refetchOrganization = useCallback(async () => {
     if (user?.id) {
       setAuthError(null);
+      // Bust both caches so we get fresh data from Supabase
+      orgCache.delete(user.id);
+      clearSessionCache(user.id);
       await fetchOrganization(user.id);
     }
   }, [user?.id, fetchOrganization]);
