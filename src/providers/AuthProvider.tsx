@@ -59,7 +59,7 @@ export const clearAuthCache = () => {
       }
     });
     localStorage.setItem('cache_version', CACHE_VERSION);
-    console.log('✅ Auth cache cleared successfully');
+    logger.debug('Auth cache cleared');
   } catch (e) {
     console.warn('Failed to clear localStorage cache:', e);
   }
@@ -72,7 +72,7 @@ function addToOrgCache(key: string, value: { org: any; role: any; timestamp: num
     const oldestKey = orgCache.keys().next().value;
     if (oldestKey) {
       orgCache.delete(oldestKey);
-      console.log(`[AuthProvider] Cache evicted oldest entry: ${oldestKey}`);
+      logger.debug(`Cache evicted oldest entry: ${oldestKey}`);
     }
   }
   orgCache.set(key, value);
@@ -100,19 +100,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // State validation function
   const validateState = (state: AuthFlagsState): AuthFlagsState => {
-    // Invalid state: loading=true, authChecked=true, orgLoading=false
-    if (state.loading && state.authChecked && !state.orgLoading) {
-      console.warn(
-        'Invalid state detected: loading=true, authChecked=true, orgLoading=false. Auto-correcting...'
-      );
-      return { ...state, loading: false };
-    }
+    // Note: { loading: true, authChecked: true, orgLoading: false } is a valid
+    // intermediate state (session found, org fetch not yet started) — do not correct it.
 
     // Invalid state: orgLoading=true but loading=false
     if (state.orgLoading && !state.loading) {
-      console.warn(
-        'Invalid state detected: orgLoading=true, loading=false. Auto-correcting...'
-      );
       return { ...state, loading: true };
     }
 
@@ -170,7 +162,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const storedVersion = localStorage.getItem('cache_version');
     if (storedVersion !== CACHE_VERSION) {
-      console.log('🔄 Cache version mismatch - clearing all caches');
+      logger.debug('Cache version mismatch - clearing all caches');
       clearAuthCache();
     }
   }, []);
@@ -181,7 +173,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // PHASE 4: Check cache first
       const cachedData = orgCache.get(userId);
       if (cachedData && Date.now() - cachedData.timestamp < CACHE_TTL) {
-        console.log('✅ Using cached organization data');
+        logger.debug('Using cached organization data');
         setUserRole(cachedData.role);
         setOrganization(cachedData.org);
         setHasOrganization(!!cachedData.org);
@@ -194,7 +186,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const lastFailure = failedFetches.get(userId);
       if (lastFailure && Date.now() - lastFailure < CIRCUIT_BREAKER_TIMEOUT) {
         const timeRemaining = Math.ceil((CIRCUIT_BREAKER_TIMEOUT - (Date.now() - lastFailure)) / 1000);
-        console.log(`⚠️ Circuit breaker active - ${timeRemaining}s remaining. Clearing cache may help.`);
+        logger.warn(`Circuit breaker active - ${timeRemaining}s remaining`);
         // Don't block completely - set sensible defaults
         setUserRole(null);
         setOrganization(null);
@@ -206,9 +198,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       // Check if already loading or if fetch is already pending for this user
       if (orgLoading || pendingFetches.has(userId)) {
-        console.log(
-          '🔍 DEBUG: fetchOrganization called but orgLoading is true or fetch already pending, skipping'
-        );
         return; // Prevent overlapping fetches
       }
 
@@ -217,7 +206,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       try {
         dispatch({ type: 'ORG_FETCH_START' });
-        console.log('🔍 DEBUG: fetchOrganization called for user:', userId);
         logger.auth(`Fetching organization data for user: ${userId}`);
 
         // PHASE 4: Reduce retries from 3 to 1 for faster failure
@@ -225,13 +213,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           return trackAsyncOperation('fetchOrganization', async () => {
             for (let i = 0; i < retries; i++) {
               try {
-                console.log(`🔍 DEBUG: RPC attempt ${i + 1}/${retries}`);
+                logger.debug(`RPC attempt ${i + 1}/${retries}`);
 
-                // PHASE 1: Reduce timeout from 10s to 3s to minimize freeze
                 const timeoutPromise = new Promise((_, reject) => {
                   setTimeout(
-                    () => reject(new Error('RPC timeout after 3 seconds')),
-                    3000
+                    () => reject(new Error('RPC timeout after 10 seconds')),
+                    10000
                   );
                 });
 
@@ -247,7 +234,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
                 return rpcData;
               } catch (error) {
-                console.log(`🔍 DEBUG: RPC attempt ${i + 1} failed:`, error);
+                logger.warn(`RPC attempt ${i + 1} failed:`, error);
 
                 if (i === retries - 1) {
                   throw error; // Last attempt failed
@@ -255,7 +242,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
                 // Exponential backoff: 1s, 2s, 4s
                 const delay = Math.pow(2, i) * 1000;
-                console.log(`🔍 DEBUG: Waiting ${delay}ms before retry...`);
                 await new Promise((resolve) => setTimeout(resolve, delay));
               }
             }
@@ -263,14 +249,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         };
 
         const rpcData = await fetchWithRetry();
-        console.log('🔍 DEBUG: RPC result:', {
-          count: rpcData?.length || 0,
-        });
 
         if (!rpcData || rpcData.length === 0) {
           // No user role found - normal for new users
           logger.auth('No user roles found - user needs onboarding');
-          console.log('🔍 DEBUG: No roles found for user:', userId);
           setUserRole(null);
           setOrganization(null);
           setHasOrganization(false);
@@ -281,11 +263,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         // Validate RPC response structure
         if (!Array.isArray(rpcData)) {
-          console.error('🔍 DEBUG: Invalid RPC response format:', rpcData);
+          logger.error('Invalid RPC response format:', rpcData);
           throw new Error('Invalid organization data format');
         }
 
-        console.log('🔍 DEBUG: Found orgs for user via RPC:', rpcData);
+        logger.auth('Found orgs for user via RPC:', rpcData?.length || 0);
 
         // Use the first organization for initial context (can enhance with last-active later)
         const first = rpcData[0];
@@ -308,23 +290,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUserRole(roleData);
 
         // Get the organization details
-        console.log(
-          '🔍 DEBUG: Querying organizations for organization_id (post-RPC):',
-          roleData.organization_id
-        );
         const { data: orgData, error: orgError } = await supabase
           .from('organizations')
           .select('*')
           .eq('id', roleData.organization_id)
           .maybeSingle();
 
-        console.log('🔍 DEBUG: organizations query result:', {
-          orgData,
-          orgError,
-        });
-
         if (orgError) {
-          console.error('Organization fetch error:', orgError);
+          logger.error('Organization fetch error:', orgError);
           setAuthError(orgError as Error);
           setOrganization(null);
           setHasOrganization(false);
@@ -333,7 +306,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         if (!orgData) {
-          console.error('Organization not found for role:', roleData);
+          logger.error('Organization not found for role:', roleData);
           setOrganization(null);
           setHasOrganization(false);
           setNeedsOnboarding(true);
@@ -341,10 +314,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         logger.auth('Organization found:', orgData);
-        console.log(
-          '🔍 DEBUG: Setting hasOrganization to true, needsOnboarding to:',
-          !orgData.onboarding_completed
-        );
         setOrganization(orgData);
         setHasOrganization(true);
         setNeedsOnboarding(!orgData.onboarding_completed);
@@ -359,7 +328,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         
         dispatch({ type: 'ORG_FETCH_SUCCESS' });
       } catch (error) {
-        console.error('Unexpected error in fetchOrganization:', error);
+        logger.error('Unexpected error in fetchOrganization:', error);
 
         // PHASE 4: Set circuit breaker on failure
         failedFetches.set(userId, Date.now());
@@ -372,9 +341,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
           errorMessage.includes('fetch') || errorMessage.includes('network');
 
         if (isTimeoutError) {
-          console.warn(
-            '🔍 DEBUG: Organization fetch timeout - clearing cache for fresh retry'
-          );
           // Clear cache to force fresh fetch next time
           orgCache.delete(userId);
           setUserRole(null);
@@ -383,7 +349,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setNeedsOnboarding(false); // Don't force onboarding on timeout
           dispatch({ type: 'ORG_FETCH_SUCCESS' });
         } else if (isNetworkError) {
-          console.error('🔍 DEBUG: Network error during organization fetch');
+          logger.error('Network error during organization fetch');
           setAuthError(
             new Error('Network error. Please check your connection.')
           );
