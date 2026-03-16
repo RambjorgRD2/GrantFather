@@ -333,7 +333,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         logger.auth('Organization found:', orgData);
         setOrganization(orgData);
         setHasOrganization(true);
-        setNeedsOnboarding(!orgData.onboarding_completed);
+        // Treat org as onboarded if flag is true, OR if it has the minimum
+        // required fields filled in (guards against stale default=false records).
+        const effectivelyOnboarded =
+          orgData.onboarding_completed ||
+          (!!orgData.name && !!orgData.contact_email);
+        setNeedsOnboarding(!effectivelyOnboarded);
         
         // PHASE 3: Cache successful fetch with LRU management
         addToOrgCache(userId, { 

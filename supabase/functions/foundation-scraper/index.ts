@@ -62,6 +62,107 @@ const CACHE_KEY = `norwegian-foundations:${startUrl}`;
 const CACHE_TTL_HOURS = 12; // Longer cache for structured data
 
 // Enhanced Norwegian Foundation Scraper
+function getFallbackFoundations(): FoundationItem[] {
+  return [
+    {
+      id: "fallback-1",
+      name: "Stiftelsesforeningen",
+      description: "Norges største organisasjon for stiftelser og fond. Finn stiftelser, legater og fond som støtter ditt formål.",
+      websiteUrl: "https://stiftelsesforeningen.no",
+      area: "Norge",
+      organizationType: "Stiftelse",
+      mainCategory: "Generell",
+      applyUrl: "https://stiftelsesforeningen.no/medlemmer/stiftelser",
+      shortDescription: "Finn stiftelser og fond i Norge",
+      region: "NO",
+      eligibility: ["Generell"],
+      deadline: null,
+      fundingMin: null,
+      fundingMax: null,
+    },
+    {
+      id: "fallback-2",
+      name: "Innovasjon Norge",
+      description: "Norges nasjonale innovasjons- og utviklingsselskap. Tilbyr tilskudd, lån og garantier til bedrifter som vil vokse og utvikle seg.",
+      websiteUrl: "https://innovasjonnorge.no",
+      area: "Norge",
+      organizationType: "Statlig",
+      mainCategory: "Innovasjon",
+      applyUrl: "https://innovasjonnorge.no/tilskudd",
+      shortDescription: "Støtte til innovasjon og utvikling",
+      region: "NO",
+      eligibility: ["Bedrift", "Oppstart"],
+      deadline: null,
+      fundingMin: 100000,
+      fundingMax: 10000000,
+    },
+    {
+      id: "fallback-3",
+      name: "Forskningsrådet",
+      description: "Norges forskningsråd finansierer forskning og innovasjon. Tilbyr prosjektmidler til forskningsmiljøer og bedrifter.",
+      websiteUrl: "https://forskningsradet.no",
+      area: "Norge",
+      organizationType: "Statlig",
+      mainCategory: "Forskning",
+      applyUrl: "https://forskningsradet.no/utlysninger",
+      shortDescription: "Forskningsfinansiering og innovasjon",
+      region: "NO",
+      eligibility: ["Forskning", "Utdanning"],
+      deadline: null,
+      fundingMin: 500000,
+      fundingMax: 50000000,
+    },
+    {
+      id: "fallback-4",
+      name: "Sparebankstiftelsen DNB",
+      description: "En av Norges største stiftelser. Støtter frivillighet, kultur, idrett og lokalsamfunn i hele Norge.",
+      websiteUrl: "https://sparebankstiftelsen.no",
+      area: "Norge",
+      organizationType: "Stiftelse",
+      mainCategory: "Kultur og frivillighet",
+      applyUrl: "https://sparebankstiftelsen.no/stotte",
+      shortDescription: "Støtter frivillighet, kultur og idrett",
+      region: "NO",
+      eligibility: ["Frivillighet", "Kultur", "Idrett"],
+      deadline: null,
+      fundingMin: 10000,
+      fundingMax: 500000,
+    },
+    {
+      id: "fallback-5",
+      name: "GiveTo / Frifond",
+      description: "Frifond støtter barn og unge gjennom demokratiske organisasjoner. Forvaltes av LNU og Norsk musikkråd.",
+      websiteUrl: "https://lnu.no/stotteordninger/frifond",
+      area: "Norge",
+      organizationType: "Statlig",
+      mainCategory: "Barn og unge",
+      applyUrl: "https://lnu.no/stotteordninger/frifond",
+      shortDescription: "Støtte til demokratiske barne- og ungdomsorganisasjoner",
+      region: "NO",
+      eligibility: ["Barn og unge", "Frivillighet"],
+      deadline: null,
+      fundingMin: 5000,
+      fundingMax: 200000,
+    },
+    {
+      id: "fallback-6",
+      name: "Gjensidigestiftelsen",
+      description: "Stiftelse som støtter trygghet og helse. Gir midler til frivillige organisasjoner som fremmer helse, mestring og livskvalitet.",
+      websiteUrl: "https://gjensidigestiftelsen.no",
+      area: "Norge",
+      organizationType: "Stiftelse",
+      mainCategory: "Helse",
+      applyUrl: "https://gjensidigestiftelsen.no/stotte",
+      shortDescription: "Støtte til trygghet, helse og mestring",
+      region: "NO",
+      eligibility: ["Frivillighet", "Helse"],
+      deadline: null,
+      fundingMin: 50000,
+      fundingMax: 2000000,
+    },
+  ];
+}
+
 async function runFoundationScrape(): Promise<{ datasetId?: string; runId?: string }> {
   if (!APIFY_TOKEN) {
     throw new Error("Missing APIFY_TOKEN secret in project settings");
@@ -560,12 +661,20 @@ serve(async (req) => {
       const cached = await getCachedFoundations();
       if (cached && isCacheFresh(cached.timestamp)) {
         return new Response(
-          JSON.stringify({ 
-            success: true, 
-            warmed: false, 
+          JSON.stringify({
+            success: true,
+            warmed: false,
             cachedAt: cached.timestamp,
-            count: cached.items.length 
+            count: cached.items.length
           }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (!APIFY_TOKEN) {
+        console.log("[Foundation API] Warmup skipped: no APIFY_TOKEN configured");
+        return new Response(
+          JSON.stringify({ success: true, warmed: false, reason: "no_token" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -573,36 +682,40 @@ serve(async (req) => {
       // Run scraping for warmup
       const { datasetId, runId } = await runFoundationScrape();
       console.log("[Foundation API] Warmup scraping initiated:", { datasetId, runId });
-      
+
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          warmed: true, 
-          datasetId, 
-          runId 
+        JSON.stringify({
+          success: true,
+          warmed: true,
+          datasetId,
+          runId
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Search request - use cache or scrape
+    // Search request - use cache, live scrape, or curated fallback
     let foundations: FoundationItem[] = [];
-    
+
     // Try cache first
     const cached = await getCachedFoundations();
     if (cached && isCacheFresh(cached.timestamp)) {
       console.log(`[Foundation API] Using cached data (${cached.items.length} foundations)`);
       foundations = cached.items;
+    } else if (!APIFY_TOKEN) {
+      // No token and no fresh cache — serve curated fallback list
+      console.log("[Foundation API] No APIFY_TOKEN configured, serving fallback foundations");
+      foundations = getFallbackFoundations();
     } else {
       // Scrape fresh data
       console.log("[Foundation API] Cache miss, scraping fresh data");
       const { datasetId } = await runFoundationScrape();
-      
+
       if (datasetId) {
         // Fetch and process scraped data
         const rawDataUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?clean=true&format=json&token=${APIFY_TOKEN}`;
         const rawResp = await fetch(rawDataUrl);
-        
+
         if (rawResp.ok) {
           const rawData = await rawResp.json();
           foundations = await processFoundationData(rawData);
@@ -613,69 +726,20 @@ serve(async (req) => {
       }
     }
 
+    // If no foundations loaded, fall back to curated list before filtering
+    if (foundations.length === 0) {
+      console.log("[Foundation API] No foundations available, using fallback list");
+      foundations = getFallbackFoundations();
+    }
+
     // Apply filters
     const filteredFoundations = filterFoundations(foundations, body);
-    
-    // If no foundations found, provide fallback data
-    if (filteredFoundations.length === 0 && foundations.length === 0) {
-      console.log("[Foundation API] No foundations found, providing fallback data");
-      const fallbackFoundations: FoundationItem[] = [
-        {
-          id: "fallback-1",
-          name: "Stiftelsesforeningen",
-          description: "Norges største organisasjon for stiftelser og fond",
-          websiteUrl: "https://stiftelsesforeningen.no",
-          area: "Norge",
-          organizationType: "Stiftelse",
-          mainCategory: "Generell",
-          applyUrl: "https://stiftelsesforeningen.no/medlemmer/stiftelser",
-          shortDescription: "Finn stiftelser og fond i Norge"
-        },
-        {
-          id: "fallback-2", 
-          name: "Innovasjon Norge",
-          description: "Norges nasjonale innovasjons- og utviklingsselskap",
-          websiteUrl: "https://innovasjonnorge.no",
-          area: "Norge",
-          organizationType: "Statlig",
-          mainCategory: "Innovasjon",
-          applyUrl: "https://innovasjonnorge.no",
-          shortDescription: "Støtte til innovasjon og utvikling"
-        },
-        {
-          id: "fallback-3",
-          name: "Forskningsrådet",
-          description: "Norges forskningsråd - finansierer forskning og innovasjon",
-          websiteUrl: "https://forskningsradet.no", 
-          area: "Norge",
-          organizationType: "Statlig",
-          mainCategory: "Forskning",
-          applyUrl: "https://forskningsradet.no",
-          shortDescription: "Forskningsfinansiering og innovasjon"
-        }
-      ];
-      
-      const response = {
-        items: fallbackFoundations,
-        totalCount: fallbackFoundations.length,
-        filters: {
-          organizationTypes: ["Stiftelse", "Statlig"],
-          mainCategories: ["Generell", "Innovasjon", "Forskning"],
-          areas: ["Norge"]
-        }
-      };
-      
-      return new Response(
-        JSON.stringify(response),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    
+
     // Prepare response with filter options
     const allTypes = [...new Set(foundations.map(f => f.organizationType).filter(Boolean))];
     const allCategories = [...new Set(foundations.map(f => f.mainCategory).filter(Boolean))];
     const allAreas = [...new Set(foundations.map(f => f.area).filter(Boolean))];
-    
+
     const response = {
       items: filteredFoundations,
       totalCount: foundations.length,
