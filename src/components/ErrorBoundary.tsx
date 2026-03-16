@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { captureException } from '@/utils/sentry';
 import { AlertTriangle, RefreshCw, Home, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +38,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Report to Sentry
+    captureException(error, {
+      componentStack: errorInfo.componentStack,
+      url: window.location.href,
+    });
 
     // Create error context for recovery service
     const errorContext: ErrorContext = {

@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 import { logger } from '@/utils/logger';
+import { identifySentryUser, clearSentryUser, setSentryOrg } from '@/utils/sentry';
 import { trackAsyncOperation } from '@/services/performanceService';
 
 type Organization = Database['public']['Tables']['organizations']['Row'];
@@ -333,6 +334,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         logger.auth('Organization found:', orgData);
         setOrganization(orgData);
         setHasOrganization(true);
+        setSentryOrg(orgData.id, orgData.name);
         // Treat org as onboarded if flag is true, OR if it has the minimum
         // required fields filled in (guards against stale default=false records).
         const effectivelyOnboarded =
@@ -409,6 +411,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (session?.user) {
         // User is authenticated - fetch organization data
         logger.auth('User authenticated, fetching organization data');
+        identifySentryUser(session.user.id, session.user.email);
         dispatch({ type: 'CHECK_SESSION_DONE_WITH_SESSION' });
         await fetchOrganization(session.user.id);
       } else {
@@ -493,6 +496,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const userId = user?.id;
       await supabase.auth.signOut();
+      clearSentryUser();
       // Clear all caches for this user
       if (userId) {
         orgCache.delete(userId);
