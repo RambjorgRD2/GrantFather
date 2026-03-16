@@ -8,7 +8,6 @@
     <meta name="author" content="GrantFather" />
     <meta name="keywords" content="grant writing, AI grants, Norwegian organizations, volunteer groups, funding applications, grant tracker" />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="/" />
 
     <!-- Inter font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -27,26 +26,6 @@
 
   <body>
     <div id="root"></div>
-    <!-- GitHub Pages SPA: restore path encoded by 404.html -->
-    <script>
-      (function() {
-        var redirect = sessionStorage.redirect;
-        delete sessionStorage.redirect;
-        if (redirect && redirect !== location.href) {
-          history.replaceState(null, null, redirect);
-        }
-        // Handle ?p= query param set by 404.html
-        var search = location.search;
-        if (search.slice(1,3) === 'p=') {
-          var decoded = '/' + search.slice(3).replace(/~and~/g, '&');
-          var rest = decoded.slice(1).split('&');
-          var path = rest[0] ? '/' + rest[0] : '';
-          var query = rest[1] ? '?' + rest[1] : '';
-          var hash = location.hash;
-          history.replaceState(null, null, path + query + hash);
-        }
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
