@@ -82,7 +82,7 @@ export function OrganizationInfo() {
           JSON.stringify(['organization'])
         );
         localStorage.setItem('org-settings:selected-org-id', orgIdParam);
-      } catch {}
+      } catch { /* localStorage unavailable */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
@@ -93,7 +93,7 @@ export function OrganizationInfo() {
       try {
         const saved = localStorage.getItem('org-settings:selected-org-id');
         if (saved) setSelectedOrganizationId(saved);
-      } catch {}
+      } catch { /* localStorage unavailable */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -106,7 +106,7 @@ export function OrganizationInfo() {
           'org-settings:selected-org-id',
           selectedOrganizationId
         );
-      } catch {}
+      } catch { /* localStorage unavailable */ }
     }
   }, [selectedOrganizationId]);
 

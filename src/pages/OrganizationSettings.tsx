@@ -120,7 +120,7 @@ export default function OrganizationSettings() {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed as string[];
       }
-    } catch {}
+    } catch { /* localStorage unavailable */ }
     // Default: expand the first section on first visit
     return ['organization'];
   });
@@ -128,7 +128,7 @@ export default function OrganizationSettings() {
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(expanded));
-    } catch {}
+    } catch { /* localStorage unavailable */ }
   }, [expanded]);
 
   if (loading) {

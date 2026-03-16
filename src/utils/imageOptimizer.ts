@@ -130,7 +130,7 @@ function calculateDimensions(
   maxWidth: number,
   maxHeight: number
 ): { width: number; height: number } {
-  let { width, height } = { width: originalWidth, height: originalHeight };
+  const { width, height } = { width: originalWidth, height: originalHeight };
 
   // Calculate scaling factor
   const widthScale = maxWidth / width;

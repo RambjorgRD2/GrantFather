@@ -119,9 +119,9 @@ async function runScrape(): Promise<{ datasetId?: string; runId?: string }> {
             if (abs.startsWith('mailto:') || abs.startsWith('tel:') || abs.startsWith('#')) return;
 
             const parent = el.closest('li, p, article, .wp-block-group, .member, .entry') || el.parentElement;
-            let snippet = parent?.textContent?.trim().replace(/\s+/g, ' ').slice(0, 300) || '';
+            let snippet = parent?.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 300) || '';
             if (!snippet || snippet.length < 10) {
-              snippet = el.parentElement?.textContent?.trim().replace(/\s+/g, ' ').slice(0, 300) || 'Member organization';
+              snippet = el.parentElement?.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 300) || 'Member organization';
             }
 
             saveData({ name, url: abs, source: request.url, content: snippet, type: 'fallback' });
@@ -151,12 +151,12 @@ async function runScrape(): Promise<{ datasetId?: string; runId?: string }> {
               .map(el => el.textContent?.trim())
               .filter(text => text && text.length > 10)
               .join(' ')
-              .replace(/\s+/g, ' ')
+              .replace(/\\s+/g, ' ')
               .slice(0, 500);
           }
-          
+
           if (!description) {
-            description = memberItem.textContent?.trim().replace(/\s+/g, ' ').slice(0, 300) || 'Foundation member organization';
+            description = memberItem.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 300) || 'Foundation member organization';
           }
 
           // Extract all links within this member item

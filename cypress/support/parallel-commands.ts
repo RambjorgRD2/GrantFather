@@ -132,7 +132,7 @@ Cypress.Commands.add('createIsolatedTestData', (dataType: string, options: any =
     case 'user':
       return cy.createTestUser(options.userType || 'regular');
       
-    case 'organization':
+    case 'organization': {
       const orgData = {
         name: `Test Org ${timestamp}-${randomId}`,
         orgType: options.orgType || 'nonprofit',
@@ -146,8 +146,9 @@ Cypress.Commands.add('createIsolatedTestData', (dataType: string, options: any =
         ...options
       };
       return cy.wrap(orgData);
-      
-    case 'application':
+    }
+
+    case 'application': {
       const appData = {
         projectName: `Test Project ${timestamp}-${randomId}`,
         summary: `Test application summary ${timestamp}`,
@@ -159,7 +160,8 @@ Cypress.Commands.add('createIsolatedTestData', (dataType: string, options: any =
         ...options
       };
       return cy.wrap(appData);
-      
+    }
+
     default:
       throw new Error(`Unknown data type: ${dataType}`);
   }

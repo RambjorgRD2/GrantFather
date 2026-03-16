@@ -55,7 +55,7 @@ serve(async (req) => {
 
     const { cacheType = 'all' } = await req.json().catch(() => ({}));
 
-    let operations = [];
+    const operations = [];
     
     if (cacheType === 'database' || cacheType === 'all') {
       // Clear application cache by updating timestamps

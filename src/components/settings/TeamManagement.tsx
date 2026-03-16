@@ -349,7 +349,7 @@ export function TeamManagement() {
       const fileName = `${user.id}/avatar_${Date.now()}.${ext}`;
 
       // Try storage first
-      let uploadResult = await supabase.storage
+      const uploadResult = await supabase.storage
         .from('profile-avatars')
         .upload(fileName, file, {
           upsert: true,
@@ -505,7 +505,6 @@ export function TeamManagement() {
                 <div className="flex items-center gap-4 flex-1">
                   <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                     {member.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={member.avatar_url}
                         alt="Avatar"

@@ -370,8 +370,7 @@ const Onboarding: React.FC = () => {
         });
       }
 
-      const errorMessage = errorInfo.userMessage;
-      error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage = errorInfo.userMessage || (error instanceof Error ? error.message : 'Unknown error occurred');
       toast({
         title: 'Error creating organization',
         description: errorMessage,

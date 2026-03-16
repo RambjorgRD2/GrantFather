@@ -170,7 +170,8 @@ serve(async (req) => {
 
     const requestBody = await req.json();
     ({ applicationId, section } = requestBody);
-    let { tone = 'formal', regenerate = false, aiProvider = 'openai', model = 'gpt-4o-mini', improvement } = requestBody;
+    const { tone = 'formal', regenerate = false, aiProvider = 'openai', improvement } = requestBody;
+    let { model = 'gpt-4o-mini' } = requestBody;
     
     // Validate and normalize model name
     model = validateModel(model, aiProvider);
