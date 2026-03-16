@@ -37,9 +37,6 @@ export default defineConfig(({ mode }) => ({
     minify: 'terser',
     sourcemap: true, // needed for Sentry stack traces; maps deleted after upload in prod
     rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-      },
       output: {
         manualChunks: {
           // Vendor chunks for better caching
