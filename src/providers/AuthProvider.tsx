@@ -226,39 +226,42 @@ export function AuthProvider({ children }: AuthProviderProps) {
         dispatch({ type: 'ORG_FETCH_START' });
         logger.auth(`Fetching organization data for user: ${userId}`);
 
-        // PHASE 4: Reduce retries from 3 to 1 for faster failure
         const fetchWithRetry = async (retries = 1): Promise<any> => {
           return trackAsyncOperation('fetchOrganization', async () => {
             for (let i = 0; i < retries; i++) {
               try {
-                logger.debug(`RPC attempt ${i + 1}/${retries}`);
+                logger.debug(`user_roles query attempt ${i + 1}/${retries}`);
 
                 const timeoutPromise = new Promise((_, reject) => {
                   setTimeout(
-                    () => reject(new Error('RPC timeout after 10 seconds')),
-                    10000
+                    () => reject(new Error('Query timeout after 20 seconds')),
+                    20000
                   );
                 });
 
-                const rpcPromise = supabase.rpc('get_user_organizations');
-                const { data: rpcData, error: rpcError } = (await Promise.race([
-                  rpcPromise,
+                const queryPromise = supabase
+                  .from('user_roles')
+                  .select('organization_id, role')
+                  .eq('user_id', userId)
+                  .not('organization_id', 'is', null);
+
+                const { data: queryData, error: queryError } = (await Promise.race([
+                  queryPromise,
                   timeoutPromise,
                 ])) as any;
 
-                if (rpcError) {
-                  throw rpcError;
+                if (queryError) {
+                  throw queryError;
                 }
 
-                return rpcData;
+                return queryData;
               } catch (error) {
-                logger.warn(`RPC attempt ${i + 1} failed:`, error);
+                logger.warn(`Query attempt ${i + 1} failed:`, error);
 
                 if (i === retries - 1) {
-                  throw error; // Last attempt failed
+                  throw error;
                 }
 
-                // Exponential backoff: 1s, 2s, 4s
                 const delay = Math.pow(2, i) * 1000;
                 await new Promise((resolve) => setTimeout(resolve, delay));
               }
@@ -360,7 +363,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Enhanced error handling
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        const isTimeoutError = errorMessage.includes('timeout');
+        const isTimeoutError = errorMessage.toLowerCase().includes('timeout');
         const isNetworkError =
           errorMessage.includes('fetch') || errorMessage.includes('network');
 

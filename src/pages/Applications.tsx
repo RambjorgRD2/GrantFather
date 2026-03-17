@@ -36,7 +36,6 @@ import {
   Loader2,
 } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
-import { OrganizationRequired } from '@/components/auth/UnifiedRouteGuard';
 import { useToast } from '@/hooks/use-toast';
 import { CreateApplicationModal } from '@/components/grants/CreateApplicationModal';
 import { QuickStartModal } from '@/components/onboarding/QuickStartModal';
@@ -56,7 +55,6 @@ interface GrantApplication {
   updated_at: string;
   submitted_at?: string;
   organization_id?: string;
-  generated_draft?: Record<string, unknown>;
 }
 
 const Applications: React.FC = () => {
@@ -94,7 +92,7 @@ const Applications: React.FC = () => {
 
       let query = supabase
         .from('grant_applications')
-        .select('*')
+        .select('id, project_name, summary, status, created_at, updated_at, submitted_at, organization_id')
         .eq('user_id', user.id)
         .eq('organization_id', activeOrganization.id);
 
@@ -133,7 +131,6 @@ const Applications: React.FC = () => {
         updated_at: app.updated_at,
         submitted_at: app.submitted_at,
         organization_id: app.organization_id,
-        generated_draft: app.generated_draft,
       }));
     },
     enabled: !!user && !authLoading && !orgLoading && !!activeOrganization?.id,
@@ -195,46 +192,41 @@ const Applications: React.FC = () => {
 
   if (authLoading || orgLoading) {
     return (
-      <OrganizationRequired>
-        <main className="container py-6">
-          <div className="flex items-center justify-center min-h-[50vh]">
-            <div className="flex items-center gap-2">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span>Loading...</span>
-            </div>
+      <main className="container py-6">
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>Loading...</span>
           </div>
-        </main>
-      </OrganizationRequired>
+        </div>
+      </main>
     );
   }
 
   // Show message if no organization is selected
   if (!activeOrganization) {
     return (
-      <OrganizationRequired>
-        <main className="container py-6">
-          <div className="flex items-center justify-center min-h-[50vh]">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold mb-4">
-                No Organization Selected
-              </h2>
-              <p className="text-muted-foreground mb-4">
-                Please select an organization to view applications.
-              </p>
-              <Button onClick={() => navigate('/settings')}>
-                Go to Settings
-              </Button>
-            </div>
+      <main className="container py-6">
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold mb-4">
+              No Organization Selected
+            </h2>
+            <p className="text-muted-foreground mb-4">
+              Please select an organization to view applications.
+            </p>
+            <Button onClick={() => navigate('/settings')}>
+              Go to Settings
+            </Button>
           </div>
-        </main>
-      </OrganizationRequired>
+        </div>
+      </main>
     );
   }
 
   return (
     <ErrorBoundary>
-      <OrganizationRequired>
-        <main className="container py-6">
+      <main className="container py-6">
           <SEOHead
             title="Applications"
             description="Manage your grant applications and track their progress."
@@ -412,7 +404,6 @@ const Applications: React.FC = () => {
             onOpenChange={setShowQuickStart}
           />
         </main>
-      </OrganizationRequired>
     </ErrorBoundary>
   );
 };
